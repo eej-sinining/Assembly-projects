@@ -8,10 +8,11 @@ include \masm32\include\kernel32.inc
 includelib \masm32\lib\masm32.lib
 includelib \masm32\lib\kernel32.lib
 
-;to run? goto Powershell
+;============= to run? goto Powershell ==============
 ; & "C:\masm32\bin\ml.exe" /c /coff VendingMachine.asm
 ; & "C:\masm32\bin\link.exe" /SUBSYSTEM:CONSOLE VendingMachine.obj
-; .\VendingMachine
+; .\VendingMachine.exe
+;====================================================
 
 .DATA
     ;Main menu Msgs
@@ -66,6 +67,11 @@ includelib \masm32\lib\kernel32.lib
     inputBuffer     db 32 dup(0)
     numBuffer       db 16 dup(0)
     tempBuffer      db 16 dup(0)
+    
+    ;Added temporary storage for values
+    paymentAmount   dd 0
+    itemPrice       dd 0
+    changeAmount    dd 0
 
 .CODE
 start:
@@ -170,8 +176,9 @@ PurchaseMode PROC
             invoke StdOut, addr mountainDewMsg
         .ENDIF
         
-        ; Get item price
+        ; Get and store item price
         mov ecx, [itemPrices + ebx*4]
+        mov [itemPrice], ecx
         
         ; Prompt for payment
         invoke StdOut, addr insertCoinsMsg
@@ -179,33 +186,30 @@ PurchaseMode PROC
         
         ; Convert payment to number
         invoke atodw, addr inputBuffer
+        mov [paymentAmount], eax
         
         ; Check if payment is sufficient
-        .IF (eax < ecx)
+        .IF (eax < [itemPrice])
             invoke StdOut, addr notEnoughMsg
             jmp purchase_loop
         .ENDIF
         
-        ; Payment is enough - save payment amount in edx
-        mov edx, eax
-        
-        ; Calculate change
-        mov eax, edx                 ; Get the payment amount back
-        sub eax, ecx                 ; Calculate change (payment - price)
-        push eax                     ; Save change amount
-        
         ; Update stock
-        mov edx, ebx
-        mov ecx, [itemStock + edx*4]
+        mov ecx, [itemStock + ebx*4]
         dec ecx
-        mov [itemStock + edx*4], ecx
+        mov [itemStock + ebx*4], ecx
         
         ; Dispense item
         invoke StdOut, addr dispenseMsg
         
-        ; Give change
-        pop eax   ; Restore change amount
+        ; Calculate change
+        mov eax, [paymentAmount]
+        sub eax, [itemPrice]
+        mov [changeAmount], eax
+        
+        ; Display change
         invoke StdOut, addr changeMsg
+        mov eax, [changeAmount]
         invoke dwtoa, eax, addr numBuffer
         invoke StdOut, addr numBuffer
         
@@ -292,6 +296,5 @@ AdminMode PROC
         jmp admin_loop
 
 AdminMode ENDP
-
 
 END start

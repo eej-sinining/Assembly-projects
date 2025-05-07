@@ -196,9 +196,20 @@ view_loop:
     imul edx, eax     ; quantity * price
     add ebx, edx
 
-    jmp mainloop
+    ; Move to next product
+    add esi, 4
+    pop ecx
+    dec ecx
+    jnz view_loop
 
+    ; Display total value
+    invoke StdOut, addr newLine
+    invoke StdOut, addr totalLabel
+    invoke dwtoa, ebx, addr outputBuffer
+    invoke StdOut, addr outputBuffer
+    invoke StdOut, addr newLine
 
+    ret
 Viewp ENDP
 
 ;=====
@@ -216,59 +227,83 @@ continue_update:
     invoke StdOut, addr updatePrompt
     invoke StdIn, addr inputBuffer, sizeof inputBuffer
 
-    mov esi, offset products
-    mov ecx, productCount
-    mov edi, offset inputBuffer
-    mov edx, 0
+    ; Loop through products to find the one to update
+    mov edx, 0                  ; Product index
+    mov ebx, offset products    ; Base address of products array
 
-search_update_loop:
-    push ecx
-    push esi
-
-    mov edi, offset inputBuffer  ; always reset EDI to input buffer
-    mov ecx, 10
-    repe cmpsb
-    je found_update
-
-    pop esi
-    add esi, 38   ; Move to next product
-    pop ecx
-    loop search_update_loop
-
-
-found_update:
-    sub esi, 10      ; go back to start of matched product
-    mov edi, esi     ; backup the full product entry address
-
-    ; Move to name (10 bytes offset)
-    add edi, 10
+search_product_loop:
+    cmp edx, productCount       ; Check if we've checked all products
+    jge product_not_found
+    
+    ; Compare product code with input (max 10 chars)
+    mov esi, ebx                ; esi points to current product
+    mov edi, offset inputBuffer ; edi points to input code
+    mov ecx, 10                 ; Max 10 characters to compare
+    push edx
+    push ebx
+    
+compare_loop:
+    mov al, [esi]
+    mov dl, [edi]
+    cmp al, dl
+    jne codes_not_equal
+    cmp al, 0
+    je codes_equal
+    inc esi
+    inc edi
+    dec ecx
+    jnz compare_loop
+    
+codes_equal:
+    pop ebx
+    pop edx
+    jmp found_product_to_update
+    
+codes_not_equal:
+    pop ebx
+    pop edx
+    add ebx, 38                 ; Move to next product
+    inc edx
+    jmp search_product_loop
+    
+product_not_found:
+    invoke StdOut, addr notFoundMsg
+    ret
+    
+found_product_to_update:
+    ; ebx points to the product to update
+    
+    ; Skip code (first 10 bytes)
+    add ebx, 10
+    
+    ; Update name
     invoke StdOut, addr promptName
     invoke StdIn, addr inputBuffer, sizeof inputBuffer
-    mov ecx, 20
-    mov esi, offset inputBuffer
+    mov edi, ebx                ; Destination for the name
+    mov esi, offset inputBuffer ; Source of the name
+    mov ecx, 20                 ; Copy up to 20 bytes
     rep movsb
-
-    ; Move to quantity (10 + 20 = 30)
+    
+    ; Update quantity (now at quantity field)
     invoke StdOut, addr promptQty
 input_qty:
     invoke StdIn, addr inputBuffer, sizeof inputBuffer
     call ValidateNumericInput
     invoke atodw, addr inputBuffer
-    mov [edi], eax   ; edi already points to qty
-    add edi, 4       ; move to price
-
+    mov [ebx+20], eax           ; Store at qty position (offset 30)
+    
     ; Update price
     invoke StdOut, addr promptPrice
 input_price:
     invoke StdIn, addr inputBuffer, sizeof inputBuffer
     call ValidateNumericInput
     invoke atodw, addr inputBuffer
-    mov [edi], eax
+    mov [ebx+24], eax           ; Store at price position (offset 34)
 
     invoke StdOut, addr updatedMsg
     ret
-
 Updatep ENDP
+
 ValidateNumericInput PROC
     mov esi, offset inputBuffer
 validate_loop:
@@ -287,12 +322,14 @@ valid_input:
 
 invalid_input:
     invoke StdOut, addr invalidInputMsg
+    invoke StdOut, addr promptQty
+    invoke StdIn, addr inputBuffer, sizeof inputBuffer
     jmp validate_loop  ; Ask again until correct
-ValidateNumericInput ENDp
+ValidateNumericInput ENDP
 
 
 ;=====
-;delete function
+;Delete function
 ;=====
 Deletep PROC
     ; Check if there are products
@@ -303,46 +340,71 @@ Deletep PROC
     
 delete_continue:
     ; Get product code to delete
-    invoke StdOut, addr promptCode
+    invoke StdOut, addr deletePrompt
     invoke StdIn, addr inputBuffer, sizeof inputBuffer
     
-    ; Search for product
-    mov esi, offset products
-    mov ecx, productCount
+    ; Loop through products to find the one to delete
+    mov edx, 0                  ; Product index
+    mov ebx, offset products    ; Base address of products array
+
+delete_search_product_loop:
+    cmp edx, productCount       ; Check if we've checked all products
+    jge delete_product_not_found
     
-delete_search_loop:
-    push ecx
-    mov edi, offset inputBuffer
-    mov ecx, 10
-    repe cmpsb
-    je found_product_to_delete
+    ; Compare product code with input (max 10 chars)
+    mov esi, ebx                ; esi points to current product
+    mov edi, offset inputBuffer ; edi points to input code
+    mov ecx, 10                 ; Max 10 characters to compare
+    push edx
+    push ebx
     
-    ; Not this product, move to next
-    add esi, 38 - 10  ; 10 already advanced by cmpsb
-    pop ecx
-    loop delete_search_loop
+delete_compare_loop:
+    mov al, [esi]
+    mov dl, [edi]
+    cmp al, dl
+    jne delete_codes_not_equal
+    cmp al, 0
+    je delete_codes_equal
+    inc esi
+    inc edi
+    dec ecx
+    jnz delete_compare_loop
     
-    ; Product not found
+delete_codes_equal:
+    pop ebx
+    pop edx
+    jmp delete_found_product
+    
+delete_codes_not_equal:
+    pop ebx
+    pop edx
+    add ebx, 38                 ; Move to next product
+    inc edx
+    jmp delete_search_product_loop
+    
+delete_product_not_found:
     invoke StdOut, addr notFoundMsg
     ret
     
-found_product_to_delete:
-    ; Calculate position of last product
+delete_found_product:
+    ; ebx points to the product to delete
+    
+    ; Get position of last product
     mov eax, productCount
     dec eax
-    mov ebx, 38
-    mul ebx
-    lea edi, products[eax]
+    mov ecx, 38
+    mul ecx
+    lea edi, products[eax]  ; edi points to last product
     
     ; Check if this is the last product
-    cmp esi, edi
+    cmp ebx, edi
     je just_decrement
     
     ; Copy last product to this position
-    push esi
+    mov esi, edi
+    mov edi, ebx
     mov ecx, 38
     rep movsb
-    pop esi
     
 just_decrement:
     ; Decrement product count
