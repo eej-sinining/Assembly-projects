@@ -44,7 +44,9 @@ includelib \masm32\lib\kernel32.lib
     invalidChoice   db "Invalid choice!",13,10,0
     noProducts      db "No products in inventory.",13,10,0
 
-    totalLabel      db "Total Inventory Value: ",0
+    
+    totalItems      db "Number of Products in the Inventory: ",0
+    totalValue      db "Total Inventory Value: $",0
 
     inputBuffer     db 64 DUP(0)
     outputBuffer    db 64 DUP(0)
@@ -173,41 +175,50 @@ view_loop:
     invoke StdOut, addr labelSep
 
     ; Show product name
-    add esi, 10
-    invoke StdOut, esi ; name (20 bytes)
+    lea edi, [esi+10]  ; Calculate name address
+    invoke StdOut, edi ; name (20 bytes)
 
     ; Show " | qty: "
     invoke StdOut, addr labelQty
-    add esi, 20
-    mov eax, [esi] ; quantity
+    mov eax, [esi+30] ; quantity at offset 30
     invoke dwtoa, eax, addr outputBuffer
     invoke StdOut, addr outputBuffer
+    
+    ; Save quantity for calculation
+    push eax
 
     ; Show " | price: "
     invoke StdOut, addr labelPrice
-    add esi, 4
-    mov eax, [esi] ; price
+    mov eax, [esi+34] ; price at offset 34
     invoke dwtoa, eax, addr outputBuffer
     invoke StdOut, addr outputBuffer
     invoke StdOut, addr newLine
 
     ; Calculate total value
-    mov edx, [esi-4]  ; quantity
-    imul edx, eax     ; quantity * price
-    add ebx, edx
+    pop edx          ; Retrieve quantity
+    imul edx, eax    ; quantity * price
+    add ebx, edx     ; Add to total
 
     ; Move to next product
-    add esi, 4
+    add esi, 38      ; Move to next product entry
     pop ecx
     dec ecx
     jnz view_loop
 
-    ; Display total value
+    ; Display number of products
     invoke StdOut, addr newLine
-    invoke StdOut, addr totalLabel
-    invoke dwtoa, ebx, addr outputBuffer
+    invoke StdOut, addr totalItems
+    mov eax, productCount
+    invoke dwtoa, eax, addr outputBuffer
     invoke StdOut, addr outputBuffer
     invoke StdOut, addr newLine
+    
+    ; Display total inventory value
+    ; invoke StdOut, addr totalValue
+    ; mov eax, ebx
+    ; invoke dwtoa, eax, addr outputBuffer
+    ; invoke StdOut, addr outputBuffer
+    ; invoke StdOut, addr newLine
 
     ret
 Viewp ENDP
