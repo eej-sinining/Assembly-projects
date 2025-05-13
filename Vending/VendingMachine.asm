@@ -30,6 +30,17 @@ includelib \masm32\lib\kernel32.lib
     closeParen      db ")", 13, 10, 0
     selectPrompt    db 13,10,"Choose item (1-4) or type '0' to return: ", 0
     bottomdash      db 13,10,"====================================",0
+    newLine         db 13,10,0
+
+    ;receipt
+    receiptMsg      db 13,10,"======== RECEIPT ========", 13,10, 0
+    brandTitle      db "StarCircle Vending Machine", 13,10, 0
+    itemTitle       db "Item: ", 0
+    priceTitle      db "Price: PHP ", 0
+    coinInsertedTitle db "Coin Inserted: PHP ", 0
+    changeTitle     db "Change: PHP ", 0
+    totalTitle      db "Total: PHP ", 0
+    receiptEnd      db 13,10,"========================", 13,10, 0
     
     ;Items
     colaMsg         db 13,10,"You selected Coca-Cola!", 13,10, 0
@@ -48,7 +59,7 @@ includelib \masm32\lib\kernel32.lib
     ;Admin
     adminModeMsg    db 13,10,"====== ADMIN MODE ======", 13,10, 0
     adminPrompt     db 13,10,"Select item to restock (1-4) or '0' to return: ", 0
-    stockPrompt     db "Enter new stock quantity: ", 0
+    stockPrompt     db "Enter quantity to add to stock: ", 0
     stockUpdatedMsg db 13,10,"Stock updated successfully!", 13,10, 0
     
     ;Error messages
@@ -59,19 +70,26 @@ includelib \masm32\lib\kernel32.lib
     exitMsg         db 13,10,"Thank you for using StarCircle Vending Machine. Goodbye!", 13,10, 0
     
     ;Product data
-    itemNames       db "Coca-Cola",0,"Sprite",0,"Royal",0,"Mountain Dew",0
+    itemNames       db "Coca-Cola",0
+                    db "Sprite",0
+                    db "Royal",0
+                    db "Mountain Dew",0
     itemPrices      dd 30, 25, 20, 20
     itemStock       dd 5, 5, 5, 5
+    itemReStock     dd 0
     
     ;Buffers
     inputBuffer     db 32 dup(0)
     numBuffer       db 16 dup(0)
     tempBuffer      db 16 dup(0)
+    nameBuffer      db 32 dup(0)
     
-    ;Added temporary storage for values
     paymentAmount   dd 0
     itemPrice       dd 0
     changeAmount    dd 0
+    currentStock    dd 0
+    addedStock      dd 0
+    selectedItem    dd 0
 
 .CODE
 start:
@@ -157,6 +175,7 @@ PurchaseMode PROC
         ; Store selected item index
         mov ebx, eax
         dec ebx  ; Convert to 0-based index
+        mov [selectedItem], ebx  ; Save selected item for later use in receipt
         
         ; Check if item is in stock
         mov ecx, [itemStock + ebx*4]
@@ -208,16 +227,88 @@ PurchaseMode PROC
         mov [changeAmount], eax
         
         ; Display change
-        invoke StdOut, addr changeMsg
-        mov eax, [changeAmount]
-        invoke dwtoa, eax, addr numBuffer
-        invoke StdOut, addr numBuffer
+        ; invoke StdOut, addr changeMsg
+        ; mov eax, [changeAmount]
+        ; invoke dwtoa, eax, addr numBuffer
+        ; invoke StdOut, addr numBuffer
+        
+        ; Print receipt
+        call PrintReceipt
         
         ; Thank you message
         invoke StdOut, addr thankYouMsg
+        invoke StdOut, addr newLine
         
         ret
 PurchaseMode ENDP
+
+;===================
+;Print Receipt
+;===================
+PrintReceipt PROC
+    ; Display receipt header
+    invoke StdOut, addr newLine
+    invoke StdOut, addr receiptMsg
+    invoke StdOut, addr newLine
+    
+    ; Get item name based on selected item
+    mov ebx, [selectedItem]
+    mov esi, 0    ; String index counter
+    mov edi, 0    ; Item counter
+    
+    ; Navigate to the correct item name in the string table
+    find_name_loop:
+        .IF (edi == ebx)
+            lea edi, [itemNames + esi]  ; Load address of the item name
+            invoke StdOut, addr itemTitle
+            invoke StdOut, edi
+            invoke StdOut, addr newLine
+            jmp name_found
+        .ENDIF
+        
+        ; Skip to the next string (find null terminator)
+        .WHILE (byte ptr [itemNames + esi] != 0)
+            inc esi
+        .ENDW
+        inc esi    ; Skip the null terminator
+        inc edi    ; Next item
+        jmp find_name_loop
+        
+    name_found:
+    
+    ; Display price
+    invoke StdOut, addr priceTitle
+    mov eax, [itemPrice]
+    invoke dwtoa, eax, addr numBuffer
+    invoke StdOut, addr numBuffer
+    invoke StdOut, addr newLine
+    
+    ; Display coin inserted
+    invoke StdOut, addr coinInsertedTitle
+    mov eax, [paymentAmount]
+    invoke dwtoa, eax, addr numBuffer
+    invoke StdOut, addr numBuffer
+    invoke StdOut, addr newLine
+    
+    ; Display change
+    invoke StdOut, addr changeTitle
+    mov eax, [changeAmount]
+    invoke dwtoa, eax, addr numBuffer
+    invoke StdOut, addr numBuffer
+    invoke StdOut, addr newLine
+    
+    ; Display total (which is the item price)
+    invoke StdOut, addr totalTitle
+    mov eax, [itemPrice]
+    invoke dwtoa, eax, addr numBuffer
+    invoke StdOut, addr numBuffer
+    invoke StdOut, addr newLine
+    
+    ; End receipt
+    invoke StdOut, addr receiptEnd
+    
+    ret
+PrintReceipt ENDP
 
 ;================
 ;Admin Procedures
@@ -280,15 +371,28 @@ AdminMode PROC
         mov ebx, eax
         dec ebx  ; Convert to 0-based index
         
-        ; Prompt for new stock quantity
+        ; Get current stock and display it
+        mov eax, [itemStock + ebx*4]
+        mov [currentStock], eax
+        invoke dwtoa, eax, addr numBuffer
+        invoke StdOut, addr numBuffer
+        invoke StdOut, addr newLine
+        
+        ; Prompt for additional stock quantity
         invoke StdOut, addr stockPrompt
         invoke StdIn, addr inputBuffer, sizeof inputBuffer
         
         ; Convert input to number
         invoke atodw, addr inputBuffer
+        mov [addedStock], eax
         
-        ; Update stock
+        mov eax, [currentStock]
+        add eax, [addedStock]
         mov [itemStock + ebx*4], eax
+        
+        ; Display new stock quantity
+        invoke dwtoa, eax, addr numBuffer
+        invoke StdOut, addr numBuffer
         
         ; Confirm stock update
         invoke StdOut, addr stockUpdatedMsg
