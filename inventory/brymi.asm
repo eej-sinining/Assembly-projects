@@ -61,6 +61,11 @@ includelib \masm32\lib\kernel32.lib
     labelQty       db " | qty: ", 0
     labelPrice     db " | price: ", 0
 
+    nameBuffer db 64 dup(0)
+    dupMsg db "Duplicate found. Try again.", 0Dh, 0Ah, 0
+    activeProductCount dd 0  ; New variable to store active product count
+
+
 .CODE
 start:
 mainloop:
@@ -100,128 +105,174 @@ Addp PROC
     jl continue_add
     invoke StdOut, addr inventoryFull
     ret
-    
+
 continue_add:
+get_code:
     ; Get product code
     invoke StdOut, addr promptCode
     invoke StdIn, addr inputBuffer, sizeof inputBuffer
-    
-    ; Calculate product position (eax = productCount * 38)
+
+    ; Check for duplicate code
+    mov ecx, productCount
+    mov esi, offset products
+check_code_loop:
+    cmp ecx, 0
+    je get_name
+    push ecx
+    push esi
+    lea edi, inputBuffer
+    mov ecx, 10
+    repe cmpsb
+    je duplicate
+    pop esi
+    add esi, 38
+    pop ecx
+    dec ecx
+    jmp check_code_loop
+
+get_name:
+    ; Get product name
+    invoke StdOut, addr promptName
+    invoke StdIn, addr nameBuffer, sizeof nameBuffer
+
+    ; Check for duplicate name
+    mov ecx, productCount
+    mov esi, offset products
+check_name_loop:
+    cmp ecx, 0
+    je continue_input
+    push ecx
+    push esi
+    lea esi, [esi+10] ; name field
+    lea edi, nameBuffer
+    mov ecx, 20
+    repe cmpsb
+    je duplicate
+    pop esi
+    add esi, 38
+    pop ecx
+    dec ecx
+    jmp check_name_loop
+
+duplicate:
+    pop esi  ; Clean up stack from the pushed values
+    pop ecx
+    invoke StdOut, addr newLine
+    invoke StdOut, addr dupMsg
+    jmp continue_add
+
+continue_input:
+    ; Calculate position in product array
     mov eax, productCount
     mov ebx, 38
     mul ebx
     lea edi, products[eax]
-    
-    ; Copy code (first 10 bytes)
+
+    ; Store code
     mov esi, offset inputBuffer
     mov ecx, 10
     rep movsb
-    
-    ; Get product name
-    invoke StdOut, addr promptName
-    invoke StdIn, addr inputBuffer, sizeof inputBuffer
-    
-    ; Copy name (next 20 bytes)
-    mov esi, offset inputBuffer
+
+    ; Store name
+    mov esi, offset nameBuffer
     mov ecx, 20
     rep movsb
-    
+
     ; Get quantity
     invoke StdOut, addr promptQty
     invoke StdIn, addr inputBuffer, sizeof inputBuffer
     invoke atodw, addr inputBuffer
     mov [edi], eax
     add edi, 4
-    
+
     ; Get price
     invoke StdOut, addr promptPrice
     invoke StdIn, addr inputBuffer, sizeof inputBuffer
     invoke atodw, addr inputBuffer
     mov [edi], eax
-    
-    ; Increment product count
+
+    ; Increment count
     inc productCount
-    
+
     invoke StdOut, addr addedMsg
     ret
 Addp ENDP
+
 
 ;=====
 ;View function
 ;=====
 Viewp PROC
+    ; Reset the active product count
+    mov activeProductCount, 0
+    
     ; Check if there are products
     cmp productCount, 0
-    jne view_products
+    jne has_products
     invoke StdOut, addr noProducts
     ret
     
-view_products:
+has_products:
+    ; Start with first product
     mov esi, offset products
     mov ecx, productCount
-    mov ebx, 0  ; Total value accumulator
-    
+
 view_loop:
+    ; Save loop counter
     push ecx
-
-    ; Newline before each product
+    
+    ; Get quantity value (offset 30 from product start)
+    mov eax, dword ptr [esi+30]
+    
+    ; Skip if quantity is 0
+    cmp eax, 0
+    je skip_this_product
+    
+    ; Increment active product count
+    inc activeProductCount
+    
+    ; Display this product
     invoke StdOut, addr newLine
-
-    ; Show "code: "
+    
+    ; Show code
     invoke StdOut, addr labelCode
-    invoke StdOut, esi ; product code (10 bytes)
-
-    ; Show " | "
+    invoke StdOut, esi
+    
+    ; Show name
     invoke StdOut, addr labelSep
-
-    ; Show product name
-    lea edi, [esi+10]  ; Calculate name address
-    invoke StdOut, edi ; name (20 bytes)
-
-    ; Show " | qty: "
+    lea edi, [esi+10]
+    invoke StdOut, edi
+    
+    ; Show quantity
     invoke StdOut, addr labelQty
-    mov eax, [esi+30] ; quantity at offset 30
     invoke dwtoa, eax, addr outputBuffer
     invoke StdOut, addr outputBuffer
     
-    ; Save quantity for calculation
-    push eax
-
-    ; Show " | price: "
+    ; Show price
     invoke StdOut, addr labelPrice
-    mov eax, [esi+34] ; price at offset 34
+    mov eax, [esi+34]
     invoke dwtoa, eax, addr outputBuffer
     invoke StdOut, addr outputBuffer
     invoke StdOut, addr newLine
-
-    ; Calculate total value
-    pop edx          ; Retrieve quantity
-    imul edx, eax    ; quantity * price
-    add ebx, edx     ; Add to total
-
+    
+skip_this_product:
     ; Move to next product
-    add esi, 38      ; Move to next product entry
+    add esi, 38
     pop ecx
     dec ecx
     jnz view_loop
-
-    ; Display number of products
+    
+    ; Display count of active products
     invoke StdOut, addr newLine
     invoke StdOut, addr totalItems
-    mov eax, productCount
+    mov eax, activeProductCount
     invoke dwtoa, eax, addr outputBuffer
     invoke StdOut, addr outputBuffer
     invoke StdOut, addr newLine
     
-    ; Display total inventory value
-    ; invoke StdOut, addr totalValue
-    ; mov eax, ebx
-    ; invoke dwtoa, eax, addr outputBuffer
-    ; invoke StdOut, addr outputBuffer
-    ; invoke StdOut, addr newLine
-
     ret
 Viewp ENDP
+
 
 ;=====
 ;Update function
@@ -295,13 +346,14 @@ found_product_to_update:
     mov ecx, 20                 ; Copy up to 20 bytes
     rep movsb
     
-    ; Update quantity (now at quantity field)
+    ; Update quantity (now at quantity field, which is at offset 30 from start of product)
     invoke StdOut, addr promptQty
 input_qty:
     invoke StdIn, addr inputBuffer, sizeof inputBuffer
     call ValidateNumericInput
     invoke atodw, addr inputBuffer
-    mov [ebx+20], eax           ; Store at qty position (offset 30)
+    ; Fix: Correct offset calculation for quantity (30 - 10 = 20)
+    mov [ebx+20], eax           ; Store at qty position
     
     ; Update price
     invoke StdOut, addr promptPrice
@@ -309,7 +361,8 @@ input_price:
     invoke StdIn, addr inputBuffer, sizeof inputBuffer
     call ValidateNumericInput
     invoke atodw, addr inputBuffer
-    mov [ebx+24], eax           ; Store at price position (offset 34)
+    ; Fix: Correct offset calculation for price (34 - 10 = 24)
+    mov [ebx+24], eax           ; Store at price position
 
     invoke StdOut, addr updatedMsg
     ret

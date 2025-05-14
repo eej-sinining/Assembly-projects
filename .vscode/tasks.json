@@ -1,0 +1,20 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build ASM with MASM",
+      "type": "shell",
+      "command": "ml",
+      "args": [
+        "/c",
+        "/coff",
+        "yourfile.asm"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    }
+  ]
+}
