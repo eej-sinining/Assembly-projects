@@ -42,6 +42,7 @@ includelib \masm32\lib\kernel32.lib
     changeTitle     db "Change: PHP ", 0
     totalTitle      db "Total: PHP ", 0
     receiptEnd      db 13,10,"========================", 13,10, 0
+    continueMsg     db "Press Enter to continue...", 0
     
     ;Items
     colaMsg         db 13,10,"You selected Coca-Cola!", 13,10, 0
@@ -242,19 +243,10 @@ PurchaseMode PROC
         sub eax, [itemPrice]
         mov [changeAmount], eax
         
-        ; Display change
-        ; invoke StdOut, addr changeMsg
-        ; mov eax, [changeAmount]
-        ; invoke dwtoa, eax, addr numBuffer
-        ; invoke StdOut, addr numBuffer
-        
         ; Print receipt
         call PrintReceipt
         
-        ; Thank you message
-        invoke StdOut, addr thankYouMsg
-        invoke StdOut, addr newLine
-        
+        ; Return to main menu
         ret
 PurchaseMode ENDP
 
@@ -264,9 +256,8 @@ PurchaseMode ENDP
 PrintReceipt PROC
     ; Display receipt header
     invoke ClearScreen
-    invoke StdOut, addr newLine
     invoke StdOut, addr receiptMsg
-    invoke StdOut, addr newLine
+    invoke StdOut, addr brandTitle
     
     ; Get item name based on selected item
     mov ebx, [selectedItem]
@@ -323,6 +314,11 @@ PrintReceipt PROC
     
     ; End receipt
     invoke StdOut, addr receiptEnd
+    
+    ; Wait for user input before continuing
+    invoke StdOut, addr newLine
+    invoke StdOut, addr continueMsg
+    invoke StdIn, addr inputBuffer, sizeof inputBuffer
     
     ret
 PrintReceipt ENDP
