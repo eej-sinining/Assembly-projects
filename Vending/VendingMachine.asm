@@ -22,6 +22,7 @@ includelib \masm32\lib\kernel32.lib
                             "[C] Exit", 13,10, 13,10,"Enter choice: ", 0
     
     ;Displays
+    
     itemListTitle   db 13,10,"======== Available Products ========", 13,10, 0
     item1Msg        db "[1] Coca-Cola    - 30 PHP (Stock: ", 0
     item2Msg        db "[2] Sprite       - 25 PHP (Stock: ", 0
@@ -84,6 +85,9 @@ includelib \masm32\lib\kernel32.lib
     tempBuffer      db 16 dup(0)
     nameBuffer      db 32 dup(0)
     
+    ;Clear screen
+    clearConsole    db 27,"[2J",27,"[H",0   ; ANSI escape sequence to clear screen
+    
     paymentAmount   dd 0
     itemPrice       dd 0
     changeAmount    dd 0
@@ -92,9 +96,20 @@ includelib \masm32\lib\kernel32.lib
     selectedItem    dd 0
 
 .CODE
+;=======================
+;Clear Screen Procedure
+;=======================
+ClearScreen PROC
+    push eax
+    invoke StdOut, addr clearConsole
+    pop eax
+    ret
+ClearScreen ENDP
+
 start:
     main_loop:
         ;Display main menu
+        invoke ClearScreen
         invoke StdOut, addr titleMsg
         invoke StdOut, addr mainMenuMsg
         invoke StdIn, addr inputBuffer, sizeof inputBuffer
@@ -123,6 +138,7 @@ start:
 PurchaseMode PROC
     purchase_loop:
         ; Display available items with current stock
+        invoke ClearScreen
         invoke StdOut, addr itemListTitle
         
         ; Display Item 1 (Coca-Cola)
@@ -247,6 +263,7 @@ PurchaseMode ENDP
 ;===================
 PrintReceipt PROC
     ; Display receipt header
+    invoke ClearScreen
     invoke StdOut, addr newLine
     invoke StdOut, addr receiptMsg
     invoke StdOut, addr newLine
@@ -315,6 +332,7 @@ PrintReceipt ENDP
 ;================
 AdminMode PROC
     ; Display admin menu
+    invoke ClearScreen
     invoke StdOut, addr adminModeMsg
     
     admin_loop:
